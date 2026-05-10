@@ -1,24 +1,21 @@
-namespace GroceryStore.Models
+﻿using System;
+
+namespace SimplePOS
 {
     public class CartItem
     {
-        public int Id { get; set; }
-        public string Name { get; set; } = "";
-        public decimal Price { get; set; }
+        public string Name { get; set; }
+
         public int Quantity { get; set; }
-        public string Barcode { get; set; } = "";
 
-        public decimal Total => Price * Quantity;
+        public decimal Price { get; set; }
 
-        public CartItem() { }
-
-        public CartItem(int id, string name, decimal price, string barcode)
+        public decimal Subtotal
         {
-            Id = id;
-            Name = name;
-            Price = price;
-            Barcode = barcode;
-            Quantity = 1;
+            get
+            {
+                return Quantity * Price;
+            }
         }
     }
 }
