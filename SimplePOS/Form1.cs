@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Drawing.Printing;
 using System.Windows.Forms;
 
 namespace SimplePOS
@@ -51,6 +52,11 @@ namespace SimplePOS
         Panel toastPanel;
         Label toastLabel;
         Timer toastTimer;
+        Label lblDiscountAmount;
+
+        // ── DISCOUNT STATE ────────────────────────────────────
+        string _selectedDiscountType = null; // "PWD" or "SENIOR"
+        decimal _discountPercentage = 0m;
 
         // ── DRAG-SCROLL STATE ─────────────────────────────────
         bool _isDragging = false;
@@ -490,23 +496,31 @@ namespace SimplePOS
             lblTotal.AutoSize = true;
             summaryBox.Controls.Add(lblTotal);
 
-            Panel sumDiv = new Panel { Location = new Point(16, 88), Size = new Size(568, 1), BackColor = clrBorder };
+            lblDiscountAmount = new Label();
+            lblDiscountAmount.Text = "";
+            lblDiscountAmount.Font = new Font("Segoe UI", 8);
+            lblDiscountAmount.ForeColor = clrOrange;
+            lblDiscountAmount.Location = new Point(16, 63);
+            lblDiscountAmount.AutoSize = true;
+            summaryBox.Controls.Add(lblDiscountAmount);
+
+            Panel sumDiv = new Panel { Location = new Point(16, 80), Size = new Size(568, 1), BackColor = clrBorder };
             summaryBox.Controls.Add(sumDiv);
 
-            Label lblCashCaption = new Label { Text = "CASH TENDERED", Font = new Font("Segoe UI", 9, FontStyle.Bold), ForeColor = clrMuted, Location = new Point(16, 98), AutoSize = true };
+            Label lblCashCaption = new Label { Text = "CASH TENDERED", Font = new Font("Segoe UI", 9, FontStyle.Bold), ForeColor = clrMuted, Location = new Point(16, 90), AutoSize = true };
             summaryBox.Controls.Add(lblCashCaption);
 
-            Panel cashBorder = new Panel { Location = new Point(16, 116), Size = new Size(214, 42), BackColor = clrBorder };
+            Panel cashBorder = new Panel { Location = new Point(10, 108), Size = new Size(240, 42), BackColor = clrBorder };
             summaryBox.Controls.Add(cashBorder);
-            Panel cashBg = new Panel { Location = new Point(1, 1), Size = new Size(212, 40), BackColor = Color.White };
+            Panel cashBg = new Panel { Location = new Point(1, 1), Size = new Size(238, 40), BackColor = Color.White };
             cashBorder.Controls.Add(cashBg);
 
-            Label cashSymbol = new Label { Text = "₱", Font = new Font("Trebuchet MS", 14, FontStyle.Bold), ForeColor = clrTextSub, Location = new Point(6, 8), AutoSize = true };
+            Label cashSymbol = new Label { Text = "₱", Font = new Font("Trebuchet MS", 10, FontStyle.Bold), ForeColor = clrTextSub, Location = new Point(3, 15), AutoSize = true };
             cashBg.Controls.Add(cashSymbol);
 
             txtCash = new TextBox();
-            txtCash.Location = new Point(26, 9);
-            txtCash.Size = new Size(178, 22);
+            txtCash.Location = new Point(23, 10);
+            txtCash.Size = new Size(204, 22);
             txtCash.Font = new Font("Segoe UI", 13, FontStyle.Bold);
             txtCash.BackColor = Color.White;
             txtCash.ForeColor = clrText;
@@ -516,22 +530,26 @@ namespace SimplePOS
             txtCash.Leave += (s, e) => cashBorder.BackColor = clrBorder;
             cashBg.Controls.Add(txtCash);
 
-            Label lblChangeCaption = new Label { Text = "CHANGE", Font = new Font("Segoe UI", 9, FontStyle.Bold), ForeColor = clrMuted, Location = new Point(248, 98), AutoSize = true };
+            Label lblChangeCaption = new Label { Text = "CHANGE", Font = new Font("Segoe UI", 9, FontStyle.Bold), ForeColor = clrMuted, Location = new Point(248, 90), AutoSize = true };
             summaryBox.Controls.Add(lblChangeCaption);
 
             lblChange = new Label();
             lblChange.Text = "₱0.00";
             lblChange.Font = new Font("Trebuchet MS", 20, FontStyle.Bold);
             lblChange.ForeColor = clrBlue;
-            lblChange.Location = new Point(248, 118);
+            lblChange.Location = new Point(248, 110);
             lblChange.AutoSize = true;
             summaryBox.Controls.Add(lblChange);
 
+            // ── QUICK MONEY & DISCOUNTS ROW ───────────────────────
             int[] quickAmounts = { 20, 50, 100, 200, 500 };
             int qx = 16;
+
             Label quickLbl = new Label { Text = "Quick:", Font = new Font("Segoe UI", 8, FontStyle.Bold), ForeColor = clrMuted, Location = new Point(qx, 163), AutoSize = true };
             summaryBox.Controls.Add(quickLbl);
             qx += 46;
+
+            // Render Quick Money Buttons (20, 50, 100, 200, 500)
             foreach (int amt in quickAmounts)
             {
                 int a = amt;
@@ -553,8 +571,103 @@ namespace SimplePOS
                     txtCash.Text = (cur + a).ToString();
                 };
                 summaryBox.Controls.Add(qBtn);
-                qx += 56;
+                qx += 56; // After the 500 button, qx ends up at 16 + 46 + (56 * 5) = 342
             }
+
+            // Add a tiny divider spacing element or continue directly beside ₱500
+            qx += 10;
+
+            // Place PWD Button directly beside ₱500
+            Button btnPWD = new Button();
+            btnPWD.Text = "PWD (20%)";
+            btnPWD.Size = new Size(72, 22);
+            btnPWD.Location = new Point(qx, 160);
+            btnPWD.BackColor = clrBlueLight;
+            btnPWD.ForeColor = clrBlue;
+            btnPWD.FlatStyle = FlatStyle.Flat;
+            btnPWD.FlatAppearance.BorderColor = clrBorder;
+            btnPWD.FlatAppearance.BorderSize = 1;
+            btnPWD.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold); // Marginally smaller font to fit elegantly
+            btnPWD.Cursor = Cursors.Hand;
+            summaryBox.Controls.Add(btnPWD);
+            qx += 76;
+
+            // Place Senior Button right next to PWD
+            Button btnSenior = new Button();
+            btnSenior.Text = "Senior (20%)";
+            btnSenior.Size = new Size(82, 22);
+            btnSenior.Location = new Point(qx, 160);
+            btnSenior.BackColor = clrBlueLight;
+            btnSenior.ForeColor = clrBlue;
+            btnSenior.FlatStyle = FlatStyle.Flat;
+            btnSenior.FlatAppearance.BorderColor = clrBorder;
+            btnSenior.FlatAppearance.BorderSize = 1;
+            btnSenior.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            btnSenior.Cursor = Cursors.Hand;
+            summaryBox.Controls.Add(btnSenior);
+            qx += 86;
+
+            // Place Clear Button right next to Senior
+            Button btnClearDiscount = new Button();
+            btnClearDiscount.Text = "✕ Clear";
+            btnClearDiscount.Size = new Size(54, 22);
+            btnClearDiscount.Location = new Point(qx, 160);
+            btnClearDiscount.BackColor = clrRedBg;
+            btnClearDiscount.ForeColor = clrRed;
+            btnClearDiscount.FlatStyle = FlatStyle.Flat;
+            btnClearDiscount.FlatAppearance.BorderColor = clrBorder;
+            btnClearDiscount.FlatAppearance.BorderSize = 1;
+            btnClearDiscount.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            btnClearDiscount.Cursor = Cursors.Hand;
+            summaryBox.Controls.Add(btnClearDiscount);
+
+            // ── KEEP ORIGINAL DISCOUNT LOGIC CLICK EVENTS ─────────
+            btnPWD.Click += (s, e) =>
+            {
+                if (_selectedDiscountType == "PWD")
+                {
+                    _selectedDiscountType = null;
+                    _discountPercentage = 0m;
+                    btnPWD.BackColor = clrBlueLight;
+                    btnSenior.BackColor = clrBlueLight;
+                }
+                else
+                {
+                    _selectedDiscountType = "PWD";
+                    _discountPercentage = 0.20m;
+                    btnPWD.BackColor = clrOrange;
+                    btnSenior.BackColor = clrBlueLight;
+                }
+                RefreshCart();
+            };
+
+            btnSenior.Click += (s, e) =>
+            {
+                if (_selectedDiscountType == "SENIOR")
+                {
+                    _selectedDiscountType = null;
+                    _discountPercentage = 0m;
+                    btnSenior.BackColor = clrBlueLight;
+                    btnPWD.BackColor = clrBlueLight;
+                }
+                else
+                {
+                    _selectedDiscountType = "SENIOR";
+                    _discountPercentage = 0.20m;
+                    btnSenior.BackColor = clrOrange;
+                    btnPWD.BackColor = clrBlueLight;
+                }
+                RefreshCart();
+            };
+
+            btnClearDiscount.Click += (s, e) =>
+            {
+                _selectedDiscountType = null;
+                _discountPercentage = 0m;
+                btnPWD.BackColor = clrBlueLight;
+                btnSenior.BackColor = clrBlueLight;
+                RefreshCart();
+            };
 
             Panel btnRow = new Panel();
             btnRow.Location = new Point(10, 574);
@@ -848,8 +961,19 @@ namespace SimplePOS
                 subtotal += item.Subtotal;
             }
 
-            decimal tax = subtotal * 0.12m;
-            decimal total = subtotal + tax;
+            decimal discount = subtotal * _discountPercentage;
+            decimal discountedSubtotal = subtotal - discount;
+            decimal tax = discountedSubtotal * 0.12m;
+            decimal total = discountedSubtotal + tax;
+
+            if (_selectedDiscountType != null)
+            {
+                lblDiscountAmount.Text = $"Discount ({_selectedDiscountType}): -₱{discount:N2}";
+            }
+            else
+            {
+                lblDiscountAmount.Text = "";
+            }
 
             lblTotal.Text = "₱" + total.ToString("N2");
 
@@ -862,8 +986,10 @@ namespace SimplePOS
         private void UpdateChange()
         {
             decimal subtotal = cart.Sum(x => x.Subtotal);
-            decimal tax = subtotal * 0.12m;
-            decimal total = subtotal + tax;
+            decimal discount = subtotal * _discountPercentage;
+            decimal discountedSubtotal = subtotal - discount;
+            decimal tax = discountedSubtotal * 0.12m;
+            decimal total = discountedSubtotal + tax;
 
             if (decimal.TryParse(txtCash.Text, out decimal cash))
             {
@@ -944,8 +1070,10 @@ namespace SimplePOS
             }
 
             decimal subtotal = cart.Sum(x => x.Subtotal);
-            decimal tax = subtotal * 0.12m;
-            decimal total = subtotal + tax;
+            decimal discount = subtotal * _discountPercentage;
+            decimal discountedSubtotal = subtotal - discount;
+            decimal tax = discountedSubtotal * 0.12m;
+            decimal total = discountedSubtotal + tax;
 
             if (!decimal.TryParse(txtCash.Text, out decimal cash))
             {
@@ -972,7 +1100,7 @@ namespace SimplePOS
                     p.Stock -= ci.Quantity;
             }
 
-            ShowReceiptDialog(subtotal, tax, total, cash, change);
+            ShowReceiptDialog(subtotal, discount, discountedSubtotal, tax, total, cash, change, _selectedDiscountType);
 
             cart.Clear();
 
@@ -988,10 +1116,13 @@ namespace SimplePOS
         // ═══════════════════════════════════════════════════════
         private void ShowReceiptDialog(
         decimal subtotal,
+        decimal discount,
+        decimal discountedSubtotal,
         decimal tax,
         decimal total,
         decimal cash,
-        decimal change)
+        decimal change,
+        string discountType)
         {
             // Snapshot cart BEFORE the caller clears it
             var snapshot = cart.ToList();
@@ -1024,7 +1155,9 @@ namespace SimplePOS
 
             Button btnPrint = MakeActionButton("🖨  Print", clrBlue, new Point(10, 10), new Size(140, 36));
             btnPrint.Click += (s, e) =>
-    PrintReceipt(snapshot, subtotal, tax, total, cash, change);
+            PrintReceipt(snapshot, subtotal, discount, discountedSubtotal, tax, total, cash, change, discountType);
+
+            btnBar.Controls.Add(btnPrint);
 
             Button btnClose = MakeActionButton("✕  Close", clrRed, new Point(160, 10), new Size(140, 36));
             btnClose.Click += (s, e) => dlg.Close();
@@ -1120,6 +1253,28 @@ namespace SimplePOS
                 new Font("Segoe UI", 10, FontStyle.Bold),
                 clrText,
                 clrText);
+
+            // Discount (if applicable)
+            if (discountType != null && discount > 0)
+            {
+                y = RC_TwoCol(
+                    paper,
+                    $"Discount ({discountType})",
+                    "-₱" + discount.ToString("N2"),
+                    y,
+                    new Font("Segoe UI", 10, FontStyle.Bold),
+                    clrOrange,
+                    clrOrange);
+
+                y = RC_TwoCol(
+                    paper,
+                    "After Discount",
+                    "₱" + discountedSubtotal.ToString("N2"),
+                    y,
+                    new Font("Segoe UI", 9),
+                    clrTextSub,
+                    clrTextSub);
+            }
 
             // Tax
             y = RC_TwoCol(
@@ -1341,10 +1496,13 @@ namespace SimplePOS
         private void PrintReceipt(
         List<CartItem> items,
         decimal subtotal,
+        decimal discount,
+        decimal discountedSubtotal,
         decimal tax,
         decimal total,
         decimal cash,
-        decimal change)
+        decimal change,
+        string discountType)
         {
             var pd = new System.Drawing.Printing.PrintDocument();
             pd.DefaultPageSettings.PaperSize =
@@ -1382,6 +1540,11 @@ namespace SimplePOS
                     Line($"{it.Name,-18} {it.Quantity,3} {"₱" + it.Subtotal.ToString("N2"),8}", mono);
                 Dash();
                 Line($"{"Subtotal",-22} {"₱" + subtotal.ToString("N2"),8}", bold);
+                if (discountType != null && discount > 0)
+                {
+                    Line($"{"Discount (" + discountType + ")",-22} {"-₱" + discount.ToString("N2"),8}", bold);
+                    Line($"{"After Discount",-22} {"₱" + discountedSubtotal.ToString("N2"),8}", mono);
+                }
                 Line($"{"VAT 12%",-22} {"₱" + tax.ToString("N2"),8}", bold);
                 Line($"{"TOTAL",-22} {"₱" + total.ToString("N2"),8}", big);
                 Dash();

@@ -40,7 +40,8 @@ namespace SimplePOS
         private Label toastLabel;
         private Timer toastTimer;
 
-        private static readonly string[] Categories = { "Drinks", "Snacks", "Fast Food", "Bread", "School" };
+        // Dynamic categories list
+        private List<string> _categories = new List<string> { "Drinks", "Snacks", "Fast Food", "Bread", "School" };
 
         public InventoryForm(List<Product> products)
         {
@@ -63,7 +64,6 @@ namespace SimplePOS
 
         private void BuildUI()
         {
-            // Grid is built first so docking layers construct cleanly
             BuildGrid();
             BuildTopBar();
             BuildSummaryStrip();
@@ -157,10 +157,7 @@ namespace SimplePOS
             toolbar.Controls.Add(lblCat);
 
             cmbCategory = new ComboBox { Location = new Point(365, 15), Size = new Size(130, 25), Font = new Font("Segoe UI", 9), DropDownStyle = ComboBoxStyle.DropDownList };
-            cmbCategory.Items.Add("All Categories");
-            foreach (var c in Categories) cmbCategory.Items.Add(c);
-            cmbCategory.SelectedIndex = 0;
-            cmbCategory.SelectedIndexChanged += (s, e) => RefreshGrid();
+            PopulateCategoryDropdown();
             toolbar.Controls.Add(cmbCategory);
 
             Label lblStock = new Label { Text = "Stock Status:", Font = new Font("Segoe UI", 9, FontStyle.Bold), ForeColor = clrTextSub, Location = new Point(515, 19), AutoSize = true };
@@ -172,6 +169,7 @@ namespace SimplePOS
             cmbStockFilter.SelectedIndexChanged += (s, e) => RefreshGrid();
             toolbar.Controls.Add(cmbStockFilter);
 
+            // Kept clean and working on the main panel
             Button btnAdd = MakeButton("＋ Add Product", clrGreen, new Point(0, 12), new Size(130, 32));
             btnAdd.Click += BtnAddProduct_Click;
             toolbar.Controls.Add(btnAdd);
@@ -184,6 +182,21 @@ namespace SimplePOS
                 btnAdd.Location = new Point(toolbar.Width - 150, 12);
                 btnRestock.Location = new Point(toolbar.Width - 290, 12);
             };
+        }
+
+        private void PopulateCategoryDropdown()
+        {
+            if (cmbCategory == null) return;
+            string currentSelection = cmbCategory.SelectedItem?.ToString() ?? "All Categories";
+
+            cmbCategory.Items.Clear();
+            cmbCategory.Items.Add("All Categories");
+            foreach (var c in _categories) cmbCategory.Items.Add(c);
+
+            if (cmbCategory.Items.Contains(currentSelection))
+                cmbCategory.SelectedItem = currentSelection;
+            else
+                cmbCategory.SelectedIndex = 0;
         }
 
         // ── CORE DATA GRIDVIEW ─────────────────────────
@@ -199,7 +212,6 @@ namespace SimplePOS
             dgvInventory.Columns.Add(new DataGridViewTextBoxColumn { Name = "colStock", HeaderText = "QTY", Width = 80, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
             dgvInventory.Columns.Add(new DataGridViewTextBoxColumn { Name = "colStatus", HeaderText = "STATUS", Width = 130 });
 
-            // Management Action Buttons
             var btnEdit = new DataGridViewButtonColumn { Name = "btnEditAction", HeaderText = "", Text = "Edit", UseColumnTextForButtonValue = true, Width = 70, FlatStyle = FlatStyle.Flat, DefaultCellStyle = { BackColor = Color.White, ForeColor = clrBlue, Font = new Font("Segoe UI", 9, FontStyle.Bold) } };
             dgvInventory.Columns.Add(btnEdit);
 
@@ -209,12 +221,11 @@ namespace SimplePOS
             var btnDel = new DataGridViewButtonColumn { Name = "btnDeleteAction", HeaderText = "", Text = "🗑", UseColumnTextForButtonValue = true, Width = 50, FlatStyle = FlatStyle.Flat, DefaultCellStyle = { BackColor = Color.White, ForeColor = clrRed } };
             dgvInventory.Columns.Add(btnDel);
 
-            // Connect UI logic events 
             dgvInventory.CellPainting += DgvInventory_CellPainting;
             dgvInventory.CellClick += dgvInventory_CellClick;
 
             this.Controls.Add(dgvInventory);
-            dgvInventory.SendToBack(); // Forces grid to snap underneath toolbars cleanly
+            dgvInventory.SendToBack();
         }
 
         // ── LIVE GRID FILTERING & BINDING ──────────────
@@ -304,9 +315,13 @@ namespace SimplePOS
             y = DlgLabel(dlg, "Product Name", y); TextBox txtName = DlgTextBox(dlg, y, ""); y += 54;
 
             y = DlgLabel(dlg, "Category", y);
-            ComboBox cmbCat = new ComboBox { Location = new Point(20, y + 22), Size = new Size(350, 30), Font = new Font("Segoe UI", 10), DropDownStyle = ComboBoxStyle.DropDownList };
-            foreach (var c in Categories) cmbCat.Items.Add(c);
-            cmbCat.SelectedIndex = 0; dlg.Controls.Add(cmbCat); y += 54;
+
+            // REMOVED "+ New" BUTTON: Restored width to full 350, and changed DropDownStyle to allow typing
+            ComboBox cmbCat = new ComboBox { Location = new Point(20, y + 22), Size = new Size(350, 30), Font = new Font("Segoe UI", 10), DropDownStyle = ComboBoxStyle.DropDown };
+            foreach (var c in _categories) cmbCat.Items.Add(c);
+            cmbCat.SelectedIndex = 0;
+            dlg.Controls.Add(cmbCat);
+            y += 54;
 
             y = DlgLabel(dlg, "Price (₱)", y); TextBox txtPrice = DlgTextBox(dlg, y, "0.00"); y += 54;
 
@@ -319,11 +334,23 @@ namespace SimplePOS
 
             btnSave.Click += (s2, e2) => {
                 string bc = txtBarcode.Text.Trim(); string name = txtName.Text.Trim();
+                string selectedCat = cmbCat.Text.Trim(); // Safely captures typed text or chosen list options
+
                 if (string.IsNullOrEmpty(bc) || string.IsNullOrEmpty(name)) { ShowToast("Barcode and Name required.", false); return; }
+                if (string.IsNullOrEmpty(selectedCat)) { ShowToast("Category is required.", false); return; }
                 if (_products.Any(x => x.Barcode == bc)) { ShowToast("Barcode already exists.", false); return; }
                 if (!decimal.TryParse(txtPrice.Text, out decimal price) || price < 0) { ShowToast("Enter valid price.", false); return; }
 
-                _products.Add(new Product(bc, name, price, cmbCat.SelectedItem.ToString(), (int)nudStock.Value));
+                // Dynamic Category Processor
+                if (!_categories.Any(c => c.Equals(selectedCat, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _categories.Add(selectedCat);
+                    PopulateCategoryDropdown(); // Sync Dashboard
+                }
+
+                string finalCategoryName = _categories.First(c => c.Equals(selectedCat, StringComparison.OrdinalIgnoreCase));
+
+                _products.Add(new Product(bc, name, price, finalCategoryName, (int)nudStock.Value));
                 RefreshGrid(); ShowToast($"'{name}' added!", true); dlg.Close();
             };
             btnCancel.Click += (s2, e2) => dlg.Close();
@@ -342,7 +369,7 @@ namespace SimplePOS
 
             y = DlgLabel(dlg, "Category", y);
             ComboBox cmbCat = new ComboBox { Location = new Point(20, y + 22), Size = new Size(350, 30), Font = new Font("Segoe UI", 10), DropDownStyle = ComboBoxStyle.DropDownList };
-            foreach (var c in Categories) cmbCat.Items.Add(c);
+            foreach (var c in _categories) cmbCat.Items.Add(c);
             cmbCat.SelectedItem = p.Category; dlg.Controls.Add(cmbCat); y += 54;
 
             y = DlgLabel(dlg, "Price (₱)", y); TextBox txtPrice = DlgTextBox(dlg, y, p.Price.ToString("N2")); y += 54;
@@ -401,7 +428,7 @@ namespace SimplePOS
             var low = _products.Where(p => p.Stock < 10).ToList();
             if (low.Count == 0) { ShowToast("No products need restocking.", true); return; }
 
-            Form dlg = MakeDialog("Restock All Low Stock", 380, 210);
+            Form dlg = MakeDialog("Restock All Low Stock", 380, 230);
             Label lblDesc = new Label { Text = $"{low.Count} items are low/out of stock.", Font = new Font("Segoe UI", 10), Location = new Point(20, 20), Size = new Size(340, 40) };
             dlg.Controls.Add(lblDesc);
 

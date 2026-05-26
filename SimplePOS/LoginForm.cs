@@ -134,7 +134,7 @@ namespace SimplePOS
 
         private void BtnLogin_Click(object sender, EventArgs e)
         {
-            if (txtUsername.Text == "admin" && txtPassword.Text == "1234")
+            if (txtUsername.Text == "1" && txtPassword.Text == "1")
             {
                 new Form1().Show();
                 this.Hide();
